@@ -31,6 +31,8 @@ import networkx as nx
 import matplotlib.pyplot as plt
 import statsmodels.api as sm
 from scipy.stats import zscore
+import statsmodels.formula.api as smf
+from IPython.core.display import HTML
 #get_ipython().magic('matplotlib inline')
 
 #%%
@@ -152,6 +154,41 @@ allWave1_2=filterout('wave1-age',allWave1_2,'H1GI1Y',agefilter)
 allWave4 = pd.read_sas(r"files\w4\wave4.xpt",format='xport',encoding='utf-8')[['AID','H4IR2']]
 allWave4_2=filterout('wave4-attractiveness',allWave4,'H4IR2',personfilter)
 
+
+#%% GML Variables from Docker Graph-Tool
+
+fname = 'full_gml.gml'
+
+with open(fname) as f:
+    content = f.readlines()
+# you may also want to remove whitespace characters like `\n` at the end of each line
+lines = [line.rstrip('\n') for line in open(fname)]
+data = [x.strip() for x in lines] 
+data = [x.replace('"','') for x in data] 
+
+datadict={"label":[],"betweenness":[],'closeness':[],'eigenvector':[],'hits':[],'katz':[],'pagerank':[],'id':[]}
+capture=False
+for d in data:
+    
+    if d==']':
+        capture=False
+    
+    if capture:
+        try:
+            values = d.split(' ')
+            datadict[values[0]].append(values[1])
+        except:
+            print ("pass",d)
+    
+    if "node" in d:
+        capture=True
+
+df_docker = pd.DataFrame(datadict)
+df_docker=df_docker.rename(columns={'label':'AID'})
+df_docker=df_docker.astype(float)
+df_docker['AID']=df_docker['AID'].astype(int)
+
+
 #=================================
 #%%  MERGING EVERYTHING TOGETHER #
 #=================================
@@ -165,8 +202,18 @@ schoolMergeLeft=schoolMergeLeft.merge(inschool,on='AID',how="inner")
 schoolMergeLeft=schoolMergeLeft.merge(allWave4_2,on="AID",how="inner")
 schoolMergeLeft=schoolMergeLeft.merge(allWave1_2,on="AID",how="inner")
 schoolMergeLeft['AID'] = schoolMergeLeft['AID'].astype(int)
-#schoolMergeLeft=schoolMergeLeft.merge(df_docker,on='AID',how="left")
+schoolMergeDocker=schoolMergeLeft.merge(df_docker,on='AID',how="inner")
 schoolMergeLeft.shape
+
+#%%
+sml=schoolMergeDocker[['IDGX2','ODGX2','BCENT10X','betweenness']]
+
+sns.jointplot(x='BCENT10X',y='betweenness',data=sml,kind='reg') 
+ax.set_title("personality_attractive and Bonachich")
+ax.set_title("Extraversion and Bonachich")
+
+#%%
+sns.countplot(x="betweenness", data=sml)
 
 #%% FILTERING
 
@@ -227,7 +274,7 @@ sns.countplot(x="ageint", data=schoolMergeZ)
 #%%
 
 #==============
-#Plots
+#Plots with Distributions
 #==============
 
 ax=sns.lmplot(x='agreeableness', y="log_bonachich", hue="genderrace",data=schoolMergeZ,fit_reg=True, truncate=True)
@@ -355,10 +402,10 @@ sum(maindata['large']['SIZE_x']<10)
 #%%
 #checkign large school and network relationship
 
-ax=sns.lmplot(x='SIZE_x', y="IDGX2", hue="genderrace",data=maindata['large'],fit_reg=True, truncate=True)
-ax.set_axis_labels(x_var="size",y_var="in")
+ax=sns.lmplot(x='personality_attractive', y="IDGX2", hue="genderrace",data=maindata['large'],fit_reg=True, truncate=True)
+ax.set_axis_labels(y_var="in degree",x_var="personality")
 ax = plt.gca()
-ax.set_title("Size and Ingroup")
+ax.set_title("Personality and Ingroup")
 sns.jointplot(x='SIZE_x',y='IDGX2',data=maindata['large'],kind='reg') 
 
 #%%
@@ -366,8 +413,11 @@ sns.jointplot(x='SIZE_x',y='IDGX2',data=maindata['large'],kind='reg')
 #Testing Partial Regression
 #-----------
 
-dataset=maindata['large-male']
-form = '%s ~ age + black + asian + native + other + %s' % ("IDGX2","agreeableness")
+dataset=maindata['large']
+maininds = ['agreeableness','extraversion','oppenness','concientiousness','neuroticism','personality_attractive']
+joinedvar = " + ".join(maininds)
+
+form = '%s ~ age + black + asian + other + %s' % ("IDGX2",joinedvar)
 est = smf.ols(formula=form, data=dataset).fit()
 fullout = est.summary()
 output = fullout.tables[1]
@@ -382,9 +432,6 @@ print(fullout)
 
 #going to need to do this once we find a good correlation
 #===================
-
-import statsmodels.formula.api as smf
-from IPython.core.display import HTML
 
 #%%
 
@@ -404,8 +451,8 @@ from IPython.core.display import HTML
 #maindata large and small for different school sizes
 race=['white','black','asian','other']
 variables = ['gender','METRO','age']+race
-variables = ['-']
-maindeps = ['IDGX2','ODGX2','bonachich']
+variables = ['']
+maindeps = ['IDGX2']#,'ODGX2','bonachich']
 maininds = ['agreeableness','extraversion','oppenness','concientiousness','neuroticism','personality_attractive']
 
 outfull = open("output\multiregression.txt","w")
@@ -718,3 +765,5 @@ finallist = list(set(first2) & set(second2))
 #merge on AID
 #filter out nulls
 #then correlate
+
+#%%
